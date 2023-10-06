@@ -5685,6 +5685,26 @@ out:
 	return 0;
 }
 
+static int get_physical_offset(struct btrfs_root *root, u64 logical, u64 *physical) {
+	struct btrfs_multi_bio *multi = NULL;
+	u64 read_len;
+	u64 *raid_map = NULL;
+	int ret;
+
+	ret = btrfs_map_block(gfs_info, READ, logical, &read_len, &multi, 1,
+			      &raid_map);
+	if (ret) {
+		fprintf(stderr, "Couldn't map the block %llu\n", logical);
+		return -EIO;
+	}
+	*physical = multi->stripes[0].physical;
+
+	free(raid_map);
+	free(multi);
+
+	return ret;
+}
+
 /*
  * Check data checksum for [@bytenr, @bytenr + @num_bytes).
  *
@@ -5706,6 +5726,7 @@ static int check_extent_csums(struct btrfs_root *root, u64 bytenr,
 	u64 read_len;
 	u64 data_checked = 0;
 	u64 tmp;
+	u64 physical;
 	int ret = 0;
 	int mirror;
 	int num_copies;
@@ -5749,13 +5770,18 @@ static int check_extent_csums(struct btrfs_root *root, u64 bytenr,
 					char found[BTRFS_CSUM_STRING_LEN];
 					char want[BTRFS_CSUM_STRING_LEN];
 
+
+					ret = get_physical_offset(root, bytenr + tmp, &physical);
+					if (ret)
+						goto out;
+
 					csum_mismatch = true;
 					btrfs_format_csum(csum_type, result, found);
 					btrfs_format_csum(csum_type,
 							  csum_expected, want);
 					fprintf(stderr,
-				"mirror %d bytenr %llu csum %s expected csum %s\n",
-						mirror, bytenr + tmp, found, want);
+				"mirror %d bytenr %llu (physical %llu) csum %s expected csum %s\n",
+						mirror, bytenr + tmp, physical, found, want);
 				}
 				data_checked += gfs_info->sectorsize;
 			}

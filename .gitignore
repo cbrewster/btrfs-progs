@@ -79,3 +79,5 @@
 /Documentation/_build
 
 *.patch
+
+result
